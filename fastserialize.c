@@ -4,10 +4,6 @@
 # include "config.h"
 #endif
 
-#include <stdio.h>
-#include <string.h>
-#include <stdint.h>
-
 #include "php.h"
 #include "ext/standard/info.h"
 #include "php_fastserialize.h"
@@ -244,7 +240,7 @@ PHP_FUNCTION(Rexpl_FastSerialize_unserialize)
 	char* cursor = data;
     size_t total_length = data_length;
 
-	array_init(return_value);
+	array_init_size(return_value, 100000);
 
 	while (cursor < data + total_length) {
         zval entry;
