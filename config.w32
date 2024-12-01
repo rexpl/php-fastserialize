@@ -1,0 +1,7 @@
+ARG_ENABLE('fastserialize', 'fastserialize support', 'no');
+
+if (PHP_FASTSERIALIZE != 'no') {
+	AC_DEFINE('HAVE_FASTSERIALIZE', 1, 'fastserialize support enabled');
+
+	EXTENSION('fastserialize', 'fastserialize.c', null, '/DZEND_ENABLE_STATIC_TSRMLS_CACHE=1');
+}
