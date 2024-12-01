@@ -17,6 +17,7 @@ enum Type {
 
 struct ColumnDefinition {
 	enum Type type;
+	size_t key_size;
 	char* key;
 };
 
@@ -72,6 +73,7 @@ static struct ColumnDefinition* parse_row_definitions(zval* row_definitions, siz
 		}
 
 		column_definitions[index].type = type;
+		column_definitions[index].key_size = string_key->len;
 		column_definitions[index].key = strdup(ZSTR_VAL(string_key)); // Copy the key as string
 
 		// Increment the index for the next struct
@@ -134,7 +136,7 @@ PHP_FUNCTION(Rexpl_FastSerialize_serialize)
 
 		for (size_t i = 0; i < num_columns; i++) {
 			struct ColumnDefinition column = column_definitions[i];
-			zval* value = zend_hash_str_find(row, column.key, strlen(column.key));
+			zval* value = zend_hash_str_find(row, column.key, column.key_size);
 
 			if (value == NULL) {
 				exit_with_value_error(column_definitions, num_columns, return_value, "Row with missing column \"%s\".", column.key);
@@ -181,7 +183,7 @@ PHP_FUNCTION(Rexpl_FastSerialize_serialize)
 
         for (size_t i = 0; i < num_columns; i++) {
 			struct ColumnDefinition column = column_definitions[i];
-			zval* value = zend_hash_str_find(row, column.key, strlen(column.key));
+			zval* value = zend_hash_str_find(row, column.key, column.key_size);
 
 			switch (column.type) {
 				case type_bigint: {
@@ -254,14 +256,14 @@ PHP_FUNCTION(Rexpl_FastSerialize_unserialize)
 					int int_value;
 					memcpy(&int_value, cursor, sizeof(int));
 					cursor += sizeof(int);
-					add_assoc_long(&entry, column.key, int_value);
+					add_assoc_long_ex(&entry, column.key, column.key_size, int_value);
 					break;
 				}
 				case type_bigint: {
 					long long_value;
 					memcpy(&long_value, cursor, sizeof(long));
 					cursor += sizeof(long);
-					add_assoc_long(&entry, column.key, long_value);
+					add_assoc_long_ex(&entry, column.key, column.key_size, long_value);
 					break;
 				}
 				case type_varchar255: {}
