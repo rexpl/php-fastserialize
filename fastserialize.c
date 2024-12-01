@@ -17,8 +17,7 @@ enum Type {
 
 struct ColumnDefinition {
 	enum Type type;
-	size_t key_size;
-	char* key;
+	zend_string* key;
 };
 
 static void throw_value_exception(const char* error_message, const char* extra) {
@@ -43,7 +42,7 @@ static struct ColumnDefinition* parse_row_definitions(zval* row_definitions, siz
     int index = 0;
 
 	#define CLEAR_MEMORY_BECAUSE_FAILED \
-		for (size_t i = 0; i < index; i++) free(column_definitions[i].key); \
+		for (size_t i = 0; i < index; i++) zend_string_release(column_definitions[i].key); \
 		free(column_definitions);
 
 	zend_ulong numeric_key;
@@ -73,8 +72,7 @@ static struct ColumnDefinition* parse_row_definitions(zval* row_definitions, siz
 		}
 
 		column_definitions[index].type = type;
-		column_definitions[index].key_size = string_key->len;
-		column_definitions[index].key = strdup(ZSTR_VAL(string_key)); // Copy the key as string
+		column_definitions[index].key = zend_string_copy(string_key);
 
 		// Increment the index for the next struct
 		index++;
@@ -85,14 +83,14 @@ static struct ColumnDefinition* parse_row_definitions(zval* row_definitions, siz
 
 static void clear_column_definition(struct ColumnDefinition* column_definitions, size_t num_columns) {
 	for (size_t i = 0; i < num_columns; i++) {
-		free(column_definitions[i].key);
+		zend_string_release(column_definitions[i].key);
 	}
 	free(column_definitions);
 }
 
-static void exit_with_value_error(struct ColumnDefinition* columns, size_t num_columns, zval* return_value, const char* error_message, const char* column_key) {
+static void exit_with_value_error(struct ColumnDefinition* columns, size_t num_columns, zval* return_value, const char* error_message, zend_string* column_key) {
 	clear_column_definition(columns, num_columns);
-	throw_value_exception(error_message, column_key);
+	throw_value_exception(error_message, ZSTR_VAL(column_key));
 
 	RETURN_NULL();
 }
@@ -128,7 +126,9 @@ PHP_FUNCTION(Rexpl_FastSerialize_serialize)
 	ZEND_HASH_FOREACH_VAL(rows_array, entry)
 	{
 		if (Z_TYPE_P(entry) != IS_ARRAY) {
-			exit_with_value_error(column_definitions, num_columns, return_value, "Each row must be an array.", "");
+			zend_string *tmp_string = zend_string_init("", strlen(""), 0);
+			exit_with_value_error(column_definitions, num_columns, return_value, "Each row must be an array.", tmp_string);
+			zend_string_release(tmp_string);
 			return;
         }
 
@@ -136,7 +136,7 @@ PHP_FUNCTION(Rexpl_FastSerialize_serialize)
 
 		for (size_t i = 0; i < num_columns; i++) {
 			struct ColumnDefinition column = column_definitions[i];
-			zval* value = zend_hash_str_find(row, column.key, column.key_size);
+			zval* value = zend_hash_find(row, column.key);
 
 			if (value == NULL) {
 				exit_with_value_error(column_definitions, num_columns, return_value, "Row with missing column \"%s\".", column.key);
@@ -183,7 +183,7 @@ PHP_FUNCTION(Rexpl_FastSerialize_serialize)
 
         for (size_t i = 0; i < num_columns; i++) {
 			struct ColumnDefinition column = column_definitions[i];
-			zval* value = zend_hash_str_find(row, column.key, column.key_size);
+			zval* value = zend_hash_find(row, column.key);
 
 			switch (column.type) {
 				case type_bigint: {
@@ -244,6 +244,8 @@ PHP_FUNCTION(Rexpl_FastSerialize_unserialize)
 
 	array_init_size(return_value, 100000);
 
+	zval value;
+
 	while (cursor < data + total_length) {
         zval entry;
     	array_init(&entry);
@@ -256,14 +258,18 @@ PHP_FUNCTION(Rexpl_FastSerialize_unserialize)
 					int int_value;
 					memcpy(&int_value, cursor, sizeof(int));
 					cursor += sizeof(int);
-					add_assoc_long_ex(&entry, column.key, column.key_size, int_value);
+
+					ZVAL_LONG(&value, int_value);
+					zend_hash_add(Z_ARRVAL(entry), column.key, &value);
 					break;
 				}
 				case type_bigint: {
 					long long_value;
 					memcpy(&long_value, cursor, sizeof(long));
 					cursor += sizeof(long);
-					add_assoc_long_ex(&entry, column.key, column.key_size, long_value);
+
+					ZVAL_LONG(&value, long_value);
+					zend_hash_add(Z_ARRVAL(entry), column.key, &value);
 					break;
 				}
 				case type_varchar255: {}
